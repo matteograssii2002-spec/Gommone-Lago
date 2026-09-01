@@ -50,13 +50,13 @@ export const Store = {
       fuelStart: 12,           // litri a bordo a inizio viaggio
       people: 1,
       calib: 1.0,              // fattore di calibrazione consumo
-      limitAlert: 1852,        // soglia allarme distanza costa (m)
+      limitAlert: 300,         // soglia allarme distanza costa (m)
+      shallowAlert: 3,         // avvisa sotto questi metri di fondale
       alertSound: true,
       keepAwake: true,
       showContours: true,
       showPOI: true,
       home: null,              // {lat,lon,name} punto di alaggio abituale
-      bathyName: null,         // nome file batimetria importata
     }, v || {});
   },
   async saveSettings(s) { return this.put('kv', s, 'settings'); },

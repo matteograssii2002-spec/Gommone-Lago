@@ -1,80 +1,80 @@
-# Gommone
+# Gommone sul Lario
 
-Strumenti di bordo per un Cape Horn Challenger 270 con Mercury 10 cv 4T.
-Applicazione web installabile: gira nel browser del telefono, si aggiunge alla schermata
-principale e continua a funzionare senza campo per le zone già visitate.
+Cape Horn Challenger 270, Mercury 10 cv 4T, Lago di Como, partenza da Mandello.
+Applicazione web installabile: gira nel browser del telefono, si aggiunge alla
+schermata principale e continua a funzionare senza campo nelle zone già viste.
 
 ## Metterla online
 
-Il GPS funziona solo su **https**, quindi il file non si può aprire con un doppio clic:
-va pubblicato. Il modo più veloce è GitHub Pages, gratis e in cinque minuti.
+Il GPS funziona solo su **https**, quindi il doppio clic sul file non basta.
 
-1. Crea un repository su GitHub, per esempio `gommone`.
-2. Carica il contenuto di questa cartella nella radice del repository.
-3. Settings → Pages → Source: *Deploy from a branch*, branch `main`, cartella `/ (root)`.
-4. Dopo un minuto l'indirizzo è `https://TUONOME.github.io/gommone/`.
+1. Crea un repository su GitHub, per esempio `lario`.
+2. Carica il contenuto di questa cartella nella radice.
+3. Settings → Pages → branch `main`, cartella `/ (root)`.
+4. Dopo un minuto sei su `https://TUONOME.github.io/lario/`.
 
-In alternativa trascina la cartella su [netlify.com/drop](https://app.netlify.com/drop):
-ti dà un indirizzo https immediato senza registrarti.
+Più veloce ancora: trascina la cartella su app.netlify.com/drop e ti dà subito
+un indirizzo https, senza registrarti.
 
-## Installarla sul telefono
+## Installarla
 
-- **iPhone**: apri l'indirizzo con Safari → Condividi → *Aggiungi a Home*.
-  Poi vai in Impostazioni → Safari → Posizione e concedi l'accesso.
+- **iPhone**: apri con Safari → Condividi → *Aggiungi a Home*.
 - **Android**: apri con Chrome → menù → *Installa app*.
 
-Alla prima apertura concedi la posizione. Fai un giro con la rete attiva prima
-dell'uscita: le mattonelle della mappa e la linea di costa restano in cache.
+Prima dell'uscita fai scorrere la mappa sulla zona dove andrai con la rete
+attiva: le mattonelle e la linea di costa restano in memoria.
 
-## Da dove arrivano i dati
+## Cosa arriva dalle carte del Lario
 
-| Cosa | Fonte | Note |
-|---|---|---|
-| Mappa | OpenStreetMap | tiles conservate in cache |
-| Simbologia nautica | OpenSeaMap | livello opzionale |
-| Linea di costa | OpenStreetMap via Overpass | scaricata una volta, poi in cache due mesi |
-| Porti, scivoli, ormeggi | OpenStreetMap | raggio di 12 km |
-| Meteo e vento | Open-Meteo | senza chiave, aggiornato ogni 20 minuti |
-| Fondale | EMODnet | vedi sotto |
+Dalle nove tavole del Consorzio dell'Adda ho ricavato:
 
-## Il fondale: leggi questa parte
+- **41 approdi pubblici** con le coordinate stampate sulle tavole, da Como a
+  Gera Lario passando per tutto il ramo di Lecco.
+- **10 approdi di emergenza**, quelli con la E gialla.
+- I **venti del lago** con i loro nomi: Tivano, Breva, Traversone, Bergamasca,
+  Menaggino, Argegnino, Ventone, Breva dei Laghetti. L'app guarda direzione e
+  ora e ti dice quale sta soffiando.
+- Un **modello di profondità** costruito sull'asse profondo del lago, ricavato
+  dagli scandagli delle tavole: 174 m davanti a Mandello, circa 180 m
+  nell'Alto Lario, oltre 400 m fra Nesso e Argegno.
 
-Questa è l'unica voce della lista che non si può mantenere davvero.
+### Sulla profondità, per essere chiari
 
-**In mare** il servizio EMODnet restituisce una profondità interpolata da rilievi reali:
-è utile come ordine di grandezza, non per passare vicino a una secca.
+Le carte sono immagini, senza uno strato vettoriale: non si possono estrarre le
+isobate una per una. Quello che c'è nell'app è una **stima**: prende la
+profondità massima dell'asse del lago nel punto dove sei e la scala in base a
+quanto sei lontano dalla riva, seguendo il profilo ripido tipico del Lario.
 
-**Sui laghi italiani non esiste una fonte pubblica interrogabile punto per punto.**
-Le carte batimetriche esistono (il CNR-IRSA e alcune Autorità di bacino le hanno
-pubblicate) ma non come servizio web. Per questo l'app accetta un file:
-in *Altro → Fondale* puoi caricare un GeoJSON con le isobate del tuo lago, e da
-quel momento la profondità viene letta da lì. Serve che ogni elemento abbia una
-proprietà numerica chiamata `depth`, `profondita`, `ele` o `z`.
-
-Finché non lo carichi, sul lago il riquadro del fondale resterà vuoto. È corretto
-che sia così: meglio un trattino che un numero inventato sotto la chiglia.
+Al largo il numero è vicino al vero (a Mandello, mezzo chilometro dalla costa,
+dà circa 126 m contro i 174 dell'asse; a settecento metri ne dà 157). **Vicino
+a riva è volutamente prudente**, cioè sottostima: se dice tre metri potrebbero
+essere cinque, ma non uno. Non è un ecoscandaglio e non lo sostituisce.
 
 ## La stima dei consumi
 
-La curva litri/ora è ricostruita per un fuoribordo 10 cv quattro tempi su uno scafo
-di 2,7 metri in acqua calma. **Non è una misura, è un modello.** Usalo per capire
-se il carburante basta, non per arrivare col serbatoio a secco.
+La curva litri/ora è ricostruita per un 10 cv quattro tempi su uno scafo di
+2,7 m in acqua calma. È un modello, non una misura. Per tararlo: fai il pieno,
+esci registrando il giro, rifai il pieno e confronta. Se hai bevuto il 20% in
+più, porta la taratura a 1,20 nella scheda Barca.
 
-Per tararlo: fai il pieno, esci registrando il viaggio, rifai il pieno e confronta
-i litri veri con quelli stimati. Se hai consumato il 20% in più, porta la
-calibrazione a 1,20 in *Altro → Carburante e motore*.
+Il carico conta: in due la velocità massima realistica scende sui 19 km/h, in
+tre lo scafo non plana più e resti sugli 11.
 
-Il modello tiene conto del carico: con tre persone lo scafo non plana e la velocità
-massima realistica scende intorno agli 11 km/h.
+## Le altre fonti
+
+| Cosa | Da dove |
+|---|---|
+| Mappa | OpenStreetMap, resa grafica CARTO Voyager |
+| Linea di costa e distanza dalla riva | OpenStreetMap via Overpass |
+| Meteo e vento | Open-Meteo, senza chiave |
 
 ## Limiti noti
 
-- Le isolinee di distanza dalla costa si calcolano solo per specchi d'acqua chiusi
-  mappati su OSM (laghi). In mare aperto la distanza dalla costa viene calcolata
-  lo stesso, ma le isolinee possono comparire anche a terra.
-- La velocità arriva dal GPS del telefono: sotto 1,5 km/h è rumore e viene azzerata.
-- L'allarme di ancoraggio e quello di distanza funzionano solo con l'app in primo
-  piano e lo schermo acceso.
+- Gli avvisi di distanza e la guardia all'ancora funzionano solo con l'app
+  aperta e lo schermo acceso.
+- La velocità viene dal GPS del telefono: sotto 1,5 km/h è rumore e va a zero.
+- La pianificazione calcola la distanza in linea d'aria. Sul Lario è quasi
+  sempre giusta perché il lago è dritto, ma fra Bellagio e i due rami conviene
+  aggiungere un chilometro.
 
-Non è uno strumento di navigazione certificato. La responsabilità della condotta
-resta di chi è al timone.
+Non è uno strumento di navigazione certificato. Al timone ci sei tu.

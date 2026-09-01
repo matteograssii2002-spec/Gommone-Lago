@@ -1,13 +1,13 @@
 {
-  "name": "Gommone",
-  "short_name": "Gommone",
-  "description": "Strumenti di bordo per il gommone: velocità, distanza dalla costa, fondale, meteo e registro delle uscite.",
+  "name": "Gommone sul Lario",
+  "short_name": "Lario",
+  "description": "Il gommone sul Lago di Como: velocità, distanza dalla riva, profondità, venti e diario dei giri.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#E9E5D6",
-  "theme_color": "#E9E5D6",
+  "background_color": "#FFFCF5",
+  "theme_color": "#FFFCF5",
   "lang": "it",
   "categories": ["navigation", "travel", "sports"],
   "icons": [
