@@ -55,6 +55,7 @@ export const Store = {
       alertSound: true,
       keepAwake: true,
       showZones: true,
+      mappaPulita: true,
       showPOI: true,
       home: null,              // {lat,lon,name} punto di alaggio abituale
     }, v || {});

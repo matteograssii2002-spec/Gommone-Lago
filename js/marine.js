@@ -45,9 +45,42 @@ const OVERPASS = [
   'https://overpass.kumi.systems/api/interpreter',
 ];
 
+/** indice dei lati per fasce di latitudine: senza, il test "sono in acqua"
+    diventa lentissimo su un lago vero */
+function fasce(anelli) {
+  if (!anelli || !anelli.length) return null;
+  let mn = 90, mx = -90;
+  for (const r of anelli) for (const p of r) { if (p.lat < mn) mn = p.lat; if (p.lat > mx) mx = p.lat; }
+  const NB = 400, h = (mx - mn) / NB || 1e-6;
+  const b = Array.from({ length: NB }, () => []);
+  for (const r of anelli) {
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const a = r[i], c = r[j];
+      let i0 = Math.floor((Math.min(a.lat, c.lat) - mn) / h);
+      let i1 = Math.floor((Math.max(a.lat, c.lat) - mn) / h);
+      i0 = Math.max(0, Math.min(NB - 1, i0)); i1 = Math.max(0, Math.min(NB - 1, i1));
+      for (let k = i0; k <= i1; k++) b[k].push([a, c]);
+    }
+  }
+  return { mn, h, NB, b };
+}
+
+function dentroA(B, lat, lon) {
+  if (!B) return false;
+  const k = Math.floor((lat - B.mn) / B.h);
+  if (k < 0 || k >= B.NB) return false;
+  let d = false;
+  for (const [a, c] of B.b[k]) {
+    if ((a.lat > lat) !== (c.lat > lat) &&
+        lon < (c.lon - a.lon) * (lat - a.lat) / (c.lat - a.lat) + a.lon) d = !d;
+  }
+  return d;
+}
+
 export class Shore {
   constructor() {
-    this.rings = [];      // anelli chiusi (specchi d'acqua) [[{lat,lon}...]]
+    this.rings = [];      // specchi d'acqua, anelli chiusi
+    this.holes = [];      // isole dentro gli specchi d'acqua
     this.lines = [];      // linee di costa aperte
     this.cell = 0.01;     // ~1 km
     this.index = new Map();
@@ -72,29 +105,10 @@ export class Shore {
     };
     const walk = (poly) => { for (let n = 0; n < poly.length - 1; n++) add([poly[n], poly[n + 1]]); };
     this.rings.forEach(walk);
+    this.holes.forEach(walk);      // anche le rive delle isole sono riva
     this.lines.forEach(walk);
-    this.buildBands();
-  }
-
-  /** indice dei lati degli specchi d'acqua per fasce di latitudine:
-      senza, il test "sono in acqua" diventa lentissimo su un lago vero */
-  buildBands() {
-    this.bands = null;
-    if (!this.rings.length) return;
-    let mn = 90, mx = -90;
-    for (const r of this.rings) for (const p of r) { if (p.lat < mn) mn = p.lat; if (p.lat > mx) mx = p.lat; }
-    const NB = 400, h = (mx - mn) / NB || 1e-6;
-    const b = Array.from({ length: NB }, () => []);
-    for (const r of this.rings) {
-      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
-        const a = r[i], c = r[j];
-        let i0 = Math.floor((Math.min(a.lat, c.lat) - mn) / h);
-        let i1 = Math.floor((Math.max(a.lat, c.lat) - mn) / h);
-        i0 = Math.max(0, Math.min(NB - 1, i0)); i1 = Math.max(0, Math.min(NB - 1, i1));
-        for (let k = i0; k <= i1; k++) b[k].push([a, c]);
-      }
-    }
-    this.bands = { mn, h, NB, b };
+    this.bands = fasce(this.rings);
+    this.bandsHoles = fasce(this.holes);
   }
 
   /** distanza in metri dalla costa più vicina; null se non ci sono dati */
@@ -147,18 +161,10 @@ export class Shore {
     return bp;
   }
 
-  /** true se il punto è dentro uno specchio d'acqua mappato, null se non lo so */
+  /** true se il punto è in acqua, false a terra, null se non ho i dati */
   inWater(lat, lon) {
-    const B = this.bands;
-    if (!B) return null;
-    const k = Math.floor((lat - B.mn) / B.h);
-    if (k < 0 || k >= B.NB) return false;
-    let dentro = false;
-    for (const [a, c] of B.b[k]) {
-      if ((a.lat > lat) !== (c.lat > lat) &&
-          lon < (c.lon - a.lon) * (lat - a.lat) / (c.lat - a.lat) + a.lon) dentro = !dentro;
-    }
-    return dentro;
+    if (!this.bands) return null;
+    return dentroA(this.bands, lat, lon) && !dentroA(this.bandsHoles, lat, lon);
   }
 
   covers(lat, lon) {
@@ -167,8 +173,9 @@ export class Shore {
     return lat > b.s + 0.01 && lat < b.n - 0.01 && lon > b.w + 0.015 && lon < b.e - 0.015;
   }
 
-  async load(lat, lon, radiusKm = 12) {
+  async load(lat, lon, radiusKm = 18) {
     if (this.loading) return;
+    this.holes = [];
     this.loading = true; this.error = null;
     const dLat = radiusKm / 111, dLon = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
     const b = { s: +(lat - dLat).toFixed(3), n: +(lat + dLat).toFixed(3), w: +(lon - dLon).toFixed(3), e: +(lon + dLon).toFixed(3) };
@@ -207,18 +214,63 @@ way["natural"="coastline"](${b.s},${b.w},${b.n},${b.e});
   }
 
   parse(data) {
-    this.rings = []; this.lines = [];
-    const push = (geom, closed) => {
-      if (!geom || geom.length < 2) return;
-      const p = geom.map(g => ({ lat: g.lat, lon: g.lon }));
-      const isClosed = p[0].lat === p[p.length - 1].lat && p[0].lon === p[p.length - 1].lon;
-      if (isClosed && closed !== false) this.rings.push(p); else this.lines.push(p);
-    };
+    this.rings = []; this.holes = []; this.lines = [];
+    const pts = g => (g || []).map(x => ({ lat: x.lat, lon: x.lon }));
+    const chiuso = p => p.length > 3 &&
+      p[0].lat === p[p.length - 1].lat && p[0].lon === p[p.length - 1].lon;
+
     for (const el of (data.elements || [])) {
-      if (el.type === 'way') push(el.geometry, el.tags && el.tags.natural === 'coastline' ? false : true);
-      else if (el.type === 'relation') for (const m of (el.members || [])) push(m.geometry, true);
+      if (el.type === 'way') {
+        const p = pts(el.geometry);
+        if (p.length < 2) continue;
+        if (el.tags && el.tags.natural === 'coastline') this.lines.push(p);
+        else if (chiuso(p)) this.rings.push(p);
+        else this.lines.push(p);
+      } else if (el.type === 'relation') {
+        const fuori = [], dentro = [];
+        for (const mb of (el.members || [])) {
+          const p = pts(mb.geometry);
+          if (p.length < 2) continue;
+          (mb.role === 'inner' ? dentro : fuori).push(p);
+        }
+        const f = cuciAnelli(fuori), d = cuciAnelli(dentro);
+        this.rings.push(...f.chiusi); this.lines.push(...f.aperti);
+        this.holes.push(...d.chiusi); this.lines.push(...d.aperti);
+      }
     }
   }
+}
+
+/**
+ * I laghi grandi su OpenStreetMap sono relazioni: la sponda arriva spezzata
+ * in decine di tratti separati, e diventa un anello chiuso solo ricucendoli
+ * per estremi coincidenti. Senza questo passaggio il Lario non risulta acqua.
+ */
+function cuciAnelli(tratti) {
+  const k = p => p.lat.toFixed(7) + ',' + p.lon.toFixed(7);
+  const resti = tratti.filter(t => t.length > 1);
+  const chiusi = [], aperti = [];
+  while (resti.length) {
+    let cur = resti.pop();
+    let giri = 0;
+    while (k(cur[0]) !== k(cur[cur.length - 1]) && giri++ < 5000) {
+      const fine = k(cur[cur.length - 1]);
+      let i = -1, rovescia = false;
+      for (let j = 0; j < resti.length; j++) {
+        if (k(resti[j][0]) === fine) { i = j; break; }
+        if (k(resti[j][resti[j].length - 1]) === fine) { i = j; rovescia = true; break; }
+      }
+      if (i < 0) break;
+      let seg = resti.splice(i, 1)[0];
+      if (rovescia) seg = seg.slice().reverse();
+      cur = cur.concat(seg.slice(1));
+    }
+    if (cur.length < 4) continue;
+    // se non si e' richiuso il contorno e' incompleto: non puo' dire
+    // cosa sia acqua, ma serve ancora per la distanza dalla riva
+    if (k(cur[0]) === k(cur[cur.length - 1])) chiusi.push(cur); else aperti.push(cur);
+  }
+  return { chiusi, aperti };
 }
 
 /* ---------- punti d'interesse ---------- */

@@ -94,6 +94,7 @@ function mostraAvvisi() {
 
 /* ---------- mappa ---------- */
 let map, barca, cerchio, scia, zone, approdi, punti, segnoMob, segnoCasa, cerchioAncora;
+let specchio, veloTerra, isolotti;
 let segui = true;
 
 function creaMappa() {
@@ -189,11 +190,49 @@ async function salvaPunto(lat, lon) {
   caricaPunti();
 }
 
+/* ---------- il lago come forma piena ----------
+   Le mattonelle OpenStreetMap sono piene di rotte dei traghetti, curve di
+   livello e strade. Sopra ci stendo il lago come sagoma e un velo sulla
+   terraferma: resta leggibile solo quello che serve in acqua. */
+function disegnaLago() {
+  for (const l of [veloTerra, specchio, isolotti]) if (l) map.removeLayer(l);
+  veloTerra = specchio = isolotti = null;
+  if (!S.set.mappaPulita || !shore.rings.length) return;
+
+  const anelli = shore.rings.map(r => r.map(p => [p.lat, p.lon]));
+  const isole = shore.holes.map(r => r.map(p => [p.lat, p.lon]));
+  const mondo = [[-85, -180], [-85, 180], [85, 180], [85, -180]];
+
+  // velo sulla terraferma: il mondo intero con gli specchi d'acqua bucati
+  veloTerra = L.polygon([mondo, ...anelli], {
+    stroke: false, fillColor: C('crema'), fillOpacity: .76, interactive: false,
+  }).addTo(map);
+
+  specchio = L.polygon(anelli.map(x => [x]), {
+    color: C('inchiostro'), weight: 2.5, fillColor: '#BCE7EE', fillOpacity: .88, interactive: false,
+  }).addTo(map);
+
+  if (isole.length) {
+    isolotti = L.polygon(isole.map(x => [x]), {
+      color: C('inchiostro'), weight: 2, fillColor: C('crema'), fillOpacity: .95, interactive: false,
+    }).addTo(map);
+  }
+}
+
 /* ---------- fasce di distanza dalla riva ----------
    Disegnate come velo di colore invece che come righe: oltre il miglio
    il rosso si vede da lontano, i 300 metri restano un accenno giallo. */
 let timerZone = null;
-const programmaZone = () => { clearTimeout(timerZone); timerZone = setTimeout(disegnaZone, 380); };
+const programmaZone = () => {
+  clearTimeout(timerZone);
+  timerZone = setTimeout(() => {
+    const c = map.getCenter();
+    if (!shore.covers(c.lat, c.lng) && !shore.loading) {
+      shore.load(c.lat, c.lng, 14).then(() => { disegnaLago(); disegnaZone(); calcolaRiva(); });
+    }
+    disegnaZone();
+  }, 380);
+};
 
 function disegnaZone() {
   if (!map) return;
@@ -202,7 +241,7 @@ function disegnaZone() {
 
   const b = map.getBounds();
   const s = b.getSouth(), n = b.getNorth(), w = b.getWest(), e = b.getEast();
-  const N = 96;
+  const N = 128;
   const cv = document.createElement('canvas');
   cv.width = N; cv.height = N;
   const ctx = cv.getContext('2d');
@@ -218,13 +257,13 @@ function disegnaZone() {
       if (noto && shore.inWater(lat, lon) === false) continue;   // a terra: niente
       const d = shore.distance(lat, lon);
       if (d == null) continue;
-      if (d > NM) { px[k] = 255; px[k + 1] = 107; px[k + 2] = 87; px[k + 3] = 92; }
-      else if (d < 300) { px[k] = 255; px[k + 1] = 201; px[k + 2] = 60; px[k + 3] = 40; }
+      if (d > NM) { px[k] = 240; px[k + 1] = 70; px[k + 2] = 50; px[k + 3] = 120; }
+      else if (d < 300) { px[k] = 255; px[k + 1] = 190; px[k + 2] = 20; px[k + 3] = 70; }
     }
   }
   ctx.putImageData(img, 0, 0);
   zone = L.imageOverlay(cv.toDataURL(), b, { interactive: false, opacity: 1 }).addTo(map);
-  zone.setZIndex(250);
+  zone.setZIndex(450);
 }
 
 /* ---------- GPS ---------- */
@@ -268,7 +307,7 @@ async function dopoLaPosizione() {
   const f = S.fix;
 
   if (!shore.covers(f.lat, f.lon) && !shore.loading) {
-    shore.load(f.lat, f.lon, 14).then(() => { disegnaZone(); calcolaRiva(); });
+    shore.load(f.lat, f.lon, 14).then(() => { disegnaLago(); disegnaZone(); calcolaRiva(); });
   }
   calcolaRiva();
   calcolaFondo();
@@ -841,6 +880,7 @@ function apriLivelli() {
     <div class="riquadro">
       <div class="riga"><label>Approdi e punti di emergenza<span class="sotto">Dalle carte del Lario</span></label><div class="interr${S.set.showPOI ? ' on' : ''}" id="l-poi"><i></i></div></div>
       <div class="riga"><label>Fasce di distanza dalla riva</label><div class="interr${S.set.showZones ? ' on' : ''}" id="l-iso"><i></i></div></div>
+      <div class="riga"><label>Mappa semplificata<span class="sotto">Nasconde traghetti, strade e curve di livello</span></label><div class="interr${S.set.mappaPulita ? ' on' : ''}" id="l-pulita"><i></i></div></div>
     </div>
     <div class="riquadro crema" style="margin-top:12px">
       <div class="legenda">
@@ -863,6 +903,10 @@ function apriLivelli() {
   $('#l-iso').onclick = async e => {
     S.set.showZones = !S.set.showZones; e.currentTarget.classList.toggle('on', S.set.showZones);
     await Store.saveSettings(S.set); disegnaZone();
+  };
+  $('#l-pulita').onclick = async e => {
+    S.set.mappaPulita = !S.set.mappaPulita; e.currentTarget.classList.toggle('on', S.set.mappaPulita);
+    await Store.saveSettings(S.set); disegnaLago();
   };
   $('#l-anc').onclick = () => { ancora(); chiudiPannello(); };
   $('#l-punto').onclick = () => { if (S.fix) { chiudiPannello(); salvaPunto(S.fix.lat, S.fix.lon); } };
@@ -892,7 +936,8 @@ function vai(v) {
 async function avvia() {
   S.set = await Store.settings();
   if (S.set.shallowAlert == null) S.set.shallowAlert = 3;
-  if (S.set.showZones == null) S.set.showZones = S.set.showContours !== false;
+  if (S.set.showZones == null) S.set.showZones = true;
+  if (S.set.mappaPulita == null) S.set.mappaPulita = true;
   if (S.set.limitAlert === 5556) S.set.limitAlert = 1852;
   applicaTema();
   setInterval(applicaTema, 300000);
