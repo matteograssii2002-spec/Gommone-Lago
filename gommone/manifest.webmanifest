@@ -1,0 +1,18 @@
+{
+  "name": "Gommone",
+  "short_name": "Gommone",
+  "description": "Strumenti di bordo per il gommone: velocità, distanza dalla costa, fondale, meteo e registro delle uscite.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E9E5D6",
+  "theme_color": "#E9E5D6",
+  "lang": "it",
+  "categories": ["navigation", "travel", "sports"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
