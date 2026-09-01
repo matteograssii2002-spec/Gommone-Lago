@@ -64,12 +64,54 @@ tre lo scafo non plana più e resti sugli 11.
 
 | Cosa | Da dove |
 |---|---|
-| Mappa | OpenStreetMap, resa grafica CARTO Voyager |
+| Mappa | OpenStreetMap |
 | Linea di costa e distanza dalla riva | OpenStreetMap via Overpass |
 | Meteo e vento | Open-Meteo, senza chiave |
 
+## Dove finiscono i tuoi dati
+
+Tutto resta sul telefono, in IndexedDB, il magazzino locale del browser.
+Sopravvive alla chiusura dell'app e al riavvio del telefono. Niente va su
+internet, non c'è nessun account.
+
+Un giro viene salvato solo se supera i cinquanta metri: così le prove da fermo
+non riempiono il diario di righe inutili. Se premi avvia e stop senza muoverti,
+l'app te lo dice invece di salvare un giro vuoto.
+
+Si cancella tutto solo in due modi: dal diario, aprendo un giro e premendo
+cancella, oppure svuotando i dati del sito dalle impostazioni del browser.
+Da GPX puoi esportare quando vuoi.
+
+## I due tasti di emergenza
+
+Nessuno dei due manda niente da solo.
+
+- **Mostrami dove sono** apre le tue coordinate in gradi e minuti, più
+  l'approdo più vicino con distanza e direzione. Serve per leggerle a voce a
+  chi risponde al 112. Il tasto di chiamata sotto apre solo il telefono, sei
+  tu a premere il verde.
+- **Manda a qualcuno la mia posizione** prepara un messaggio con un link alla
+  mappa e apre il menù di condivisione: scegli tu chi e se inviarlo.
+
+Sulla mappa il salvagente 🛟 è un'altra cosa: segna il punto in cui qualcuno è
+caduto in acqua e ti mostra rotta e distanza per tornarci.
+
+## Le fasce di distanza dalla riva
+
+Sulla mappa vedi due veli di colore:
+
+- **rosso**, oltre un miglio dalla riva più vicina. Sul Lario ci si arriva solo
+  nel tratto largo fra Menaggio e Varenna, ed è la fascia che richiede la
+  dotazione di sicurezza completa.
+- **giallo tenue**, entro i 300 metri. Solo un promemoria per i bagnanti e i
+  limiti di velocità sottoriva.
+
+In mezzo la mappa resta pulita, perché è lì che stai quasi sempre.
+
 ## Limiti noti
 
+- Quando sei a terra l'app non mostra distanza e profondità: comparirebbero
+  numeri privi di senso. Al loro posto trovi un piccolo avviso.
 - Gli avvisi di distanza e la guardia all'ancora funzionano solo con l'app
   aperta e lo schermo acceso.
 - La velocità viene dal GPS del telefono: sotto 1,5 km/h è rumore e va a zero.

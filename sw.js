@@ -1,6 +1,6 @@
 /* Guscio dell'app in cache, tiles conservate man mano che le incontri:
    le zone già viste restano visibili anche senza campo. */
-const V = 'gommone-v2';
+const V = 'gommone-v3';
 const SHELL = [
   './', './index.html', './styles.css', './manifest.webmanifest',
   './js/app.js', './js/marine.js', './js/store.js', './js/como.js',
@@ -8,7 +8,7 @@ const SHELL = [
   './lib/images/marker-icon.png', './lib/images/marker-shadow.png',
   './icons/icon-192.png', './icons/icon-512.png',
 ];
-const TILES = 'gommone-tiles-v2';
+const TILES = 'gommone-tiles-v3';
 const MAX_TILES = 2500;
 
 self.addEventListener('install', e => {
@@ -34,7 +34,7 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
 
   // tiles: prima la cache, poi la rete
-  if (/basemaps\.cartocdn\.com|tile\.openstreetmap\.org/.test(url.hostname)) {
+  if (/tile\.openstreetmap\.org/.test(url.hostname)) {
     e.respondWith((async () => {
       const c = await caches.open(TILES);
       const hit = await c.match(e.request);

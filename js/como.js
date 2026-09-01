@@ -190,15 +190,3 @@ export function riconosciVento(lat, lon, dirDaGradi, ora) {
   }
   return null;
 }
-
-/* ---------- distintivi ---------- */
-export const DISTINTIVI = [
-  { id: 'primo', nome: 'Prima uscita', icona: '🚤', come: 'Registra il tuo primo giro', test: t => t.length >= 1 },
-  { id: 'cinque', nome: 'Habitué del Lario', icona: '🏅', come: 'Cinque uscite registrate', test: t => t.length >= 5 },
-  { id: 'tivano', nome: 'In piedi col Tivano', icona: '🌅', come: 'Parti prima delle otto del mattino', test: t => t.some(x => new Date(x.start).getHours() < 8) },
-  { id: 'bellagio', nome: 'Punta Spartivento', icona: '🧭', come: 'Passa davanti a Bellagio', test: t => t.some(x => (x.points || []).some(p => Math.hypot((p.lat - 45.9877) * 111, (p.lon - 9.2596) * 78) < 1.2)) },
-  { id: 'venticinque', nome: 'Venticinque chilometri', icona: '🌊', come: 'Venticinque km in totale', test: t => t.reduce((s, x) => s + x.distance, 0) > 25000 },
-  { id: 'cento', nome: 'Cento nel Lario', icona: '👑', come: 'Cento km in totale', test: t => t.reduce((s, x) => s + x.distance, 0) > 100000 },
-  { id: 'abisso', nome: 'Sopra l\u2019abisso', icona: '🕳️', come: 'Passa dove il fondo supera i 200 metri', test: t => t.some(x => (x.maxDepth || 0) > 200) },
-  { id: 'lungo', nome: 'Gita lunga', icona: '⛽', come: 'Un\u2019uscita di almeno quindici km', test: t => t.some(x => x.distance > 15000) },
-];

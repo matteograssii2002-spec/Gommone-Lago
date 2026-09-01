@@ -35,7 +35,7 @@
     <div class="attrezzi">
       <button class="attrezzo acceso" id="t-centro" title="Seguimi">🎯</button>
       <button class="attrezzo" id="t-livelli" title="Cosa vedo sulla mappa">🗺️</button>
-      <button class="attrezzo" id="t-mob" title="Uomo in acqua">🆘</button>
+      <button class="attrezzo" id="t-mob" title="Segna un uomo in acqua">🛟</button>
       <button class="attrezzo" id="t-rec" title="Registra il giro">⏺</button>
     </div>
 
@@ -70,10 +70,8 @@
   <section class="view" id="v-diario">
     <div class="scroll">
       <h1 class="titolo">Il diario di bordo</h1>
-      <p class="occhiello">Tutti i giri che hai fatto, con i numeri e le medaglie.</p>
-      <div class="sez"><div class="due" id="totali"></div></div>
-      <div class="sez"><h2>Medaglie</h2><div class="medaglie" id="medaglie"></div></div>
-      <div class="sez"><h2>Le uscite</h2><div id="elenco-viaggi"></div></div>
+      <p class="occhiello" id="diario-totale">I giri restano salvati sul telefono, anche se chiudi l’app.</p>
+      <div class="sez"><div id="elenco-viaggi"></div></div>
     </div>
   </section>
 
@@ -100,9 +98,9 @@
 
       <div class="sez">
         <h2>Se succede qualcosa</h2>
-        <button class="bottone rosso" id="btn-sos">Dove sono, per i soccorsi</button>
+        <button class="bottone rosso" id="btn-sos">Mostrami dove sono</button>
         <button class="bottone chiaro" id="btn-condividi">Manda a qualcuno la mia posizione</button>
-        <p class="nota" style="margin-top:10px">Sul lago si chiama il <b>112</b>. La Guardia Costiera al 1530 vale per il mare.</p>
+        <p class="nota" style="margin-top:10px">Nessuno dei due tasti chiama o manda niente da solo. Il primo ti apre le coordinate da leggere al telefono, il secondo prepara un messaggio che poi mandi tu. Sul lago si chiama il <b>112</b>.</p>
       </div>
 
       <div class="sez">

@@ -73,6 +73,28 @@ export class Shore {
     const walk = (poly) => { for (let n = 0; n < poly.length - 1; n++) add([poly[n], poly[n + 1]]); };
     this.rings.forEach(walk);
     this.lines.forEach(walk);
+    this.buildBands();
+  }
+
+  /** indice dei lati degli specchi d'acqua per fasce di latitudine:
+      senza, il test "sono in acqua" diventa lentissimo su un lago vero */
+  buildBands() {
+    this.bands = null;
+    if (!this.rings.length) return;
+    let mn = 90, mx = -90;
+    for (const r of this.rings) for (const p of r) { if (p.lat < mn) mn = p.lat; if (p.lat > mx) mx = p.lat; }
+    const NB = 400, h = (mx - mn) / NB || 1e-6;
+    const b = Array.from({ length: NB }, () => []);
+    for (const r of this.rings) {
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const a = r[i], c = r[j];
+        let i0 = Math.floor((Math.min(a.lat, c.lat) - mn) / h);
+        let i1 = Math.floor((Math.max(a.lat, c.lat) - mn) / h);
+        i0 = Math.max(0, Math.min(NB - 1, i0)); i1 = Math.max(0, Math.min(NB - 1, i1));
+        for (let k = i0; k <= i1; k++) b[k].push([a, c]);
+      }
+    }
+    this.bands = { mn, h, NB, b };
   }
 
   /** distanza in metri dalla costa più vicina; null se non ci sono dati */
@@ -125,19 +147,18 @@ export class Shore {
     return bp;
   }
 
-  /** true se il punto è dentro uno specchio d'acqua mappato */
+  /** true se il punto è dentro uno specchio d'acqua mappato, null se non lo so */
   inWater(lat, lon) {
-    if (!this.rings.length) return null;
-    let inside = false;
-    for (const ring of this.rings) {
-      let c = false;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const yi = ring[i].lat, xi = ring[i].lon, yj = ring[j].lat, xj = ring[j].lon;
-        if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) c = !c;
-      }
-      if (c) inside = !inside;
+    const B = this.bands;
+    if (!B) return null;
+    const k = Math.floor((lat - B.mn) / B.h);
+    if (k < 0 || k >= B.NB) return false;
+    let dentro = false;
+    for (const [a, c] of B.b[k]) {
+      if ((a.lat > lat) !== (c.lat > lat) &&
+          lon < (c.lon - a.lon) * (lat - a.lat) / (c.lat - a.lat) + a.lon) dentro = !dentro;
     }
-    return inside;
+    return dentro;
   }
 
   covers(lat, lon) {
@@ -198,55 +219,6 @@ way["natural"="coastline"](${b.s},${b.w},${b.n},${b.e});
       else if (el.type === 'relation') for (const m of (el.members || [])) push(m.geometry, true);
     }
   }
-}
-
-/* ---------- isolinee di distanza (marching squares) ---------- */
-export function distanceContours(shore, bounds, levels, res = 68) {
-  if (!shore.index.size) return [];
-  const { s, w, n, e } = bounds;
-  const dLat = (n - s) / res, dLon = (e - w) / res;
-  const grid = new Float32Array((res + 1) * (res + 1));
-  const hasRings = shore.rings.length > 0;
-  for (let i = 0; i <= res; i++) {
-    const lat = s + i * dLat;
-    for (let j = 0; j <= res; j++) {
-      const lon = w + j * dLon;
-      let d = shore.distance(lat, lon);
-      if (d === null) d = 0;
-      if (hasRings && !shore.inWater(lat, lon)) d = -d;   // negativo a terra
-      grid[i * (res + 1) + j] = d;
-    }
-  }
-  const at = (i, j) => grid[i * (res + 1) + j];
-  const out = [];
-  for (const lv of levels) {
-    const segs = [];
-    const ip = (v1, v2, p1, p2) => {
-      const t = (lv - v1) / (v2 - v1 || 1e-9);
-      return [p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1])];
-    };
-    for (let i = 0; i < res; i++) for (let j = 0; j < res; j++) {
-      const v = [at(i, j), at(i, j + 1), at(i + 1, j + 1), at(i + 1, j)];
-      const p = [
-        [s + i * dLat, w + j * dLon],
-        [s + i * dLat, w + (j + 1) * dLon],
-        [s + (i + 1) * dLat, w + (j + 1) * dLon],
-        [s + (i + 1) * dLat, w + j * dLon],
-      ];
-      let idx = 0;
-      for (let k = 0; k < 4; k++) if (v[k] >= lv) idx |= (1 << k);
-      if (idx === 0 || idx === 15) continue;
-      const edge = k => ip(v[k], v[(k + 1) % 4], p[k], p[(k + 1) % 4]);
-      const T = {
-        1: [[0, 3]], 2: [[0, 1]], 3: [[1, 3]], 4: [[1, 2]], 5: [[0, 1], [2, 3]],
-        6: [[0, 2]], 7: [[2, 3]], 8: [[2, 3]], 9: [[0, 2]], 10: [[0, 3], [1, 2]],
-        11: [[1, 2]], 12: [[1, 3]], 13: [[0, 1]], 14: [[0, 3]],
-      }[idx];
-      for (const [a, b] of T) segs.push([edge(a), edge(b)]);
-    }
-    out.push({ level: lv, segments: segs });
-  }
-  return out;
 }
 
 /* ---------- punti d'interesse ---------- */

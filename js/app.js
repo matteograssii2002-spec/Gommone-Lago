@@ -1,16 +1,14 @@
 import { Store } from './store.js';
 import {
-  NM, haversine, bearing, compassName, Shore, distanceContours,
+  NM, haversine, bearing, compassName, Shore,
   loadWeather, WX, weatherWarnings, depthAt,
   litersPerHour, bestCruise, economyCruise, maxSpeed, planTrip,
 } from './marine.js';
-import {
-  APPRODI, EMERGENZE, profonditaLario, nelLario, riconosciVento, DISTINTIVI,
-} from './como.js';
+import { APPRODI, EMERGENZE, profonditaLario, riconosciVento } from './como.js';
 
 const S = {
   set: null, fix: null, speed: 0,
-  riva: null, fondo: null, fondoMax: null,
+  riva: null, fondo: null, fondoMax: null, aTerra: false,
   meteo: null, vento: null,
   giro: null, benzinaUsata: 0,
   mob: null, ancora: null,
@@ -95,18 +93,16 @@ function mostraAvvisi() {
 }
 
 /* ---------- mappa ---------- */
-let map, barca, cerchio, scia, isolinee, approdi, punti, segnoMob, segnoCasa, cerchioAncora;
+let map, barca, cerchio, scia, zone, approdi, punti, segnoMob, segnoCasa, cerchioAncora;
 let segui = true;
 
 function creaMappa() {
   map = L.map('map', { zoomControl: false, tap: false });
   map.setView([45.9127, 9.3213], 13);   // Mandello
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    subdomains: 'abcd', maxZoom: 19,
-    attribution: '© OpenStreetMap · © CARTO · carte Consorzio dell\u2019Adda',
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap · carte del Consorzio dell\u2019Adda',
   }).addTo(map);
 
-  isolinee = L.layerGroup().addTo(map);
   approdi = L.layerGroup().addTo(map);
   punti = L.layerGroup().addTo(map);
   scia = L.polyline([], { color: C('corallo'), weight: 5, opacity: .9, lineCap: 'round' }).addTo(map);
@@ -117,7 +113,7 @@ function creaMappa() {
   }).addTo(map);
 
   map.on('dragstart', () => { segui = false; $('#t-centro').classList.remove('acceso'); });
-  map.on('moveend', programmaIsolinee);
+  map.on('moveend', programmaZone);
   map.on('contextmenu', e => salvaPunto(e.latlng.lat, e.latlng.lng));
 
   disegnaApprodi();
@@ -139,7 +135,7 @@ function ricoloraMappa() {
   scia.setStyle({ color: C('corallo') });
   cerchio.setStyle({ color: C('lago') });
   if (cerchioAncora) cerchioAncora.setStyle({ color: C('sole') });
-  disegnaIsolinee();
+  disegnaZone();
 }
 
 function aggiornaBarca() {
@@ -193,29 +189,42 @@ async function salvaPunto(lat, lon) {
   caricaPunti();
 }
 
-/* ---------- isolinee di distanza dalla riva ---------- */
-let timerIso = null;
-const programmaIsolinee = () => { clearTimeout(timerIso); timerIso = setTimeout(disegnaIsolinee, 400); };
+/* ---------- fasce di distanza dalla riva ----------
+   Disegnate come velo di colore invece che come righe: oltre il miglio
+   il rosso si vede da lontano, i 300 metri restano un accenno giallo. */
+let timerZone = null;
+const programmaZone = () => { clearTimeout(timerZone); timerZone = setTimeout(disegnaZone, 380); };
 
-function disegnaIsolinee() {
-  if (!isolinee) return;
-  isolinee.clearLayers();
-  if (!S.set.showContours || !shore.index.size || map.getZoom() < 11) return;
+function disegnaZone() {
+  if (!map) return;
+  if (zone) { map.removeLayer(zone); zone = null; }
+  if (!S.set.showZones || !shore.index.size || map.getZoom() < 10) return;
+
   const b = map.getBounds();
-  const stili = {
-    300: { color: C('corallo'), weight: 2.5, dashArray: '3 8' },
-    [NM]: { color: C('lago-scuro'), weight: 2.5, dashArray: '12 8' },
-  };
-  let set;
-  try { set = distanceContours(shore, { s: b.getSouth(), w: b.getWest(), n: b.getNorth(), e: b.getEast() }, [300, NM]); }
-  catch (e) { return; }
-  for (const { level, segments } of set) {
-    if (!segments.length) continue;
-    L.polyline(segments.map(([a, c]) => [[a[0], a[1]], [c[0], c[1]]]),
-      Object.assign({ interactive: false }, stili[level])).addTo(isolinee);
-    const mid = segments[Math.floor(segments.length / 2)];
-    if (mid) etichetta(mid[0][0], mid[0][1], level === 300 ? '300 m' : '1 miglio', '').addTo(isolinee);
+  const s = b.getSouth(), n = b.getNorth(), w = b.getWest(), e = b.getEast();
+  const N = 96;
+  const cv = document.createElement('canvas');
+  cv.width = N; cv.height = N;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(N, N);
+  const px = img.data;
+  const noto = shore.rings.length > 0;
+
+  for (let i = 0; i < N; i++) {
+    const lat = n - (i + 0.5) * (n - s) / N;
+    for (let j = 0; j < N; j++) {
+      const lon = w + (j + 0.5) * (e - w) / N;
+      const k = (i * N + j) * 4;
+      if (noto && shore.inWater(lat, lon) === false) continue;   // a terra: niente
+      const d = shore.distance(lat, lon);
+      if (d == null) continue;
+      if (d > NM) { px[k] = 255; px[k + 1] = 107; px[k + 2] = 87; px[k + 3] = 92; }
+      else if (d < 300) { px[k] = 255; px[k + 1] = 201; px[k + 2] = 60; px[k + 3] = 40; }
+    }
   }
+  ctx.putImageData(img, 0, 0);
+  zone = L.imageOverlay(cv.toDataURL(), b, { interactive: false, opacity: 1 }).addTo(map);
+  zone.setZIndex(250);
 }
 
 /* ---------- GPS ---------- */
@@ -259,7 +268,7 @@ async function dopoLaPosizione() {
   const f = S.fix;
 
   if (!shore.covers(f.lat, f.lon) && !shore.loading) {
-    shore.load(f.lat, f.lon, 14).then(() => { disegnaIsolinee(); calcolaRiva(); });
+    shore.load(f.lat, f.lon, 14).then(() => { disegnaZone(); calcolaRiva(); });
   }
   calcolaRiva();
   calcolaFondo();
@@ -280,6 +289,13 @@ async function dopoLaPosizione() {
 
 function calcolaRiva() {
   if (!S.fix) return;
+  const acqua = shore.rings.length ? shore.inWater(S.fix.lat, S.fix.lon) : null;
+  S.aTerra = acqua === false;
+  if (S.aTerra) {
+    S.riva = null; S.fondo = null;
+    togliAvviso('limite'); togliAvviso('basso');
+    return;
+  }
   const d = shore.distance(S.fix.lat, S.fix.lon);
   S.riva = d;
   if (d == null) return;
@@ -296,7 +312,7 @@ function calcolaRiva() {
 
 function calcolaFondo() {
   const f = S.fix;
-  if (!f || S.riva == null) return;
+  if (!f || S.aTerra || S.riva == null) return;
   const lario = profonditaLario(f.lat, f.lon, S.riva);
   if (lario) {
     S.fondo = lario.depth; S.fondoMax = lario.max;
@@ -364,14 +380,14 @@ async function chiudiGiro() {
   $('#t-rec').classList.remove('registra');
   $('#t-rec').textContent = '⏺';
   if (g.points.length > 1 && g.distance > 50) {
-    const primaMedaglie = await medaglieOttenute();
     await Store.put('trips', g);
-    const dopo = await medaglieOttenute();
-    const nuove = dopo.filter(m => !primaMedaglie.some(p => p.id === m.id));
     disegnaDiario();
-    mostraRiassunto(g, nuove);
+    mostraRiassunto(g);
   } else {
     disegnaQuadro();
+    apriPannello(`<h2>Giro troppo corto</h2>
+      <p class="nota">Non l\u2019ho salvato: sono meno di cinquanta metri, sembra una prova da fermo.</p>
+      <button class="bottone" style="margin-top:14px" onclick="document.getElementById('pannello').classList.remove('on')">Va bene</button>`);
   }
 }
 
@@ -391,21 +407,16 @@ function titoloGiro(g) {
   return lontano ? `Fino a ${lontano}` : `Giro del ${giorno(g.start)}`;
 }
 
-function mostraRiassunto(g, nuove) {
+function mostraRiassunto(g) {
   apriPannello(`
     <h2>Bel giro 🎉</h2>
-    <p class="nota">${g.nome} · ${durata(g.end - g.start)}</p>
+    <p class="nota">${g.nome} · ${durata(g.end - g.start)} · salvato nel diario</p>
     <div class="due" style="margin-top:14px">
       <div class="dato"><small>Hai fatto</small><b class="num">${(g.distance / 1000).toFixed(1)}<i> km</i></b></div>
       <div class="dato"><small>Punta massima</small><b class="num">${(g.maxSpeed * 3.6).toFixed(1)}<i> km/h</i></b></div>
       <div class="dato"><small>Benzina</small><b class="num">${g.fuel.toFixed(1)}<i> ℓ</i></b></div>
       <div class="dato"><small>Fondo più profondo</small><b class="num">${g.maxDepth ? Math.round(g.maxDepth) : '—'}<i> m</i></b></div>
     </div>
-    ${nuove.length ? `<div class="riquadro sole" style="margin-top:14px">
-      <b>Medaglia nuova!</b>
-      <div class="medaglie" style="margin-top:10px">${nuove.map(m => `
-        <div class="medaglia presa"><div class="disco">${m.icona}</div><span>${m.nome}</span></div>`).join('')}</div>
-    </div>` : ''}
     <button class="bottone" style="margin-top:16px" onclick="document.getElementById('pannello').classList.remove('on')">Va bene</button>`);
 }
 
@@ -458,6 +469,7 @@ function disegnaQuadro() {
   // pillole
   const p = [];
   if (!S.fix) p.push({ t: '🛰️ Cerco il GPS' });
+  if (S.aTerra) p.push({ t: '🚗 Sei a terra' });
   if (S.mob && S.fix) {
     const d = haversine(S.fix, S.mob), b = bearing(S.fix, S.mob);
     p.push({ t: `🆘 ${Math.round(d)} m verso ${compassName(b)}`, c: 'forte' });
@@ -475,15 +487,17 @@ function disegnaQuadro() {
 
   // quadranti
   const riva = $('#s-riva');
-  riva.innerHTML = S.riva == null ? (shore.loading ? '<i style="font-size:14px">un attimo…</i>' : '—') : dist(S.riva);
-  $('#q-riva').classList.toggle('allarme', S.set.limitAlert > 0 && S.riva > S.set.limitAlert);
+  riva.innerHTML = S.aTerra ? '<i style="font-size:14px">a terra</i>'
+    : S.riva == null ? (shore.loading ? '<i style="font-size:14px">un attimo…</i>' : '—')
+    : dist(S.riva);
+  $('#q-riva').classList.toggle('allarme', !S.aTerra && S.set.limitAlert > 0 && S.riva > S.set.limitAlert);
 
   const fondo = $('#s-fondo');
-  fondo.innerHTML = S.fondo == null ? '—'
+  fondo.innerHTML = (S.aTerra || S.fondo == null) ? '—'
     : `${S.fondo < 10 ? S.fondo.toFixed(1) : Math.round(S.fondo)}<i>m</i>`;
-  $('#s-fondo-bar').style.width = S.fondo == null ? '0'
+  $('#s-fondo-bar').style.width = (S.aTerra || S.fondo == null) ? '0'
     : Math.min(100, S.fondo / 410 * 100) + '%';
-  $('#q-fondo').classList.toggle('allarme', S.fondo != null && S.set.shallowAlert > 0 && S.fondo < S.set.shallowAlert);
+  $('#q-fondo').classList.toggle('allarme', !S.aTerra && S.fondo != null && S.set.shallowAlert > 0 && S.fondo < S.set.shallowAlert);
 
   const restano = Math.max(0, S.set.fuelStart - S.benzinaUsata);
   const lph = litersPerHour(v, S.set.people, S.set.calib);
@@ -582,35 +596,18 @@ function disegnaCielo() {
 }
 
 /* ---------- diario ---------- */
-async function medaglieOttenute() {
-  const t = await Store.all('trips') || [];
-  return DISTINTIVI.filter(m => { try { return m.test(t); } catch (e) { return false; } });
-}
-
 async function disegnaDiario() {
-  const giri = (await Store.all('trips') || []).sort((a, b) => b.start - a.start);
+  const giri = (await Store.all('trips') || []).sort((x, y) => y.start - x.start);
   const km = giri.reduce((s, g) => s + g.distance, 0) / 1000;
-  const litri = giri.reduce((s, g) => s + (g.fuel || 0), 0);
-  const tempo = giri.reduce((s, g) => s + (g.end - g.start), 0);
-  const punta = Math.max(0, ...giri.map(g => g.maxSpeed || 0));
-
-  $('#totali').innerHTML = `
-    <div class="dato"><small>Chilometri fatti</small><b class="num">${km.toFixed(1)}<i> km</i></b></div>
-    <div class="dato"><small>Uscite</small><b class="num">${giri.length}</b></div>
-    <div class="dato"><small>Ore in acqua</small><b class="num">${(tempo / 3600000).toFixed(1)}<i> h</i></b></div>
-    <div class="dato"><small>Record di velocità</small><b class="num">${(punta * 3.6).toFixed(1)}<i> km/h</i></b></div>`;
-
-  const prese = await medaglieOttenute();
-  $('#medaglie').innerHTML = DISTINTIVI.map(m => {
-    const ok = prese.some(p => p.id === m.id);
-    return `<div class="medaglia ${ok ? 'presa' : ''}" title="${m.come}">
-      <div class="disco">${m.icona}</div><span>${ok ? m.nome : m.come}</span></div>`;
-  }).join('');
+  $('#diario-totale').textContent = giri.length
+    ? `${giri.length} ${giri.length === 1 ? 'uscita' : 'uscite'} · ${km.toFixed(1)} km in tutto. Restano salvati sul telefono anche se chiudi l\u2019app.`
+    : 'I giri restano salvati sul telefono, anche se chiudi l\u2019app.';
 
   const el = $('#elenco-viaggi');
   if (!giri.length) {
     el.innerHTML = `<div class="vuoto"><div class="faccia">🚤</div><b>Nessun giro ancora</b>
-      <span>Sulla mappa premi il tasto rosso quando parti, e ripremilo quando torni.</span></div>`;
+      <span>Premi il tasto rosso sulla mappa quando parti e ripremilo quando torni.
+      Sotto i cinquanta metri non lo salvo, così le prove da fermo non intasano il diario.</span></div>`;
     return;
   }
   el.innerHTML = giri.map(g => `
@@ -646,7 +643,7 @@ async function apriGiro(id) {
     <button class="bottone chiaro" id="x-del">Cancella questo giro</button>`);
   setTimeout(() => {
     const m = L.map('minimappa', { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 18 }).addTo(m);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(m);
     const pl = L.polyline(g.points.map(p => [p.lat, p.lon]), { color: C('corallo'), weight: 4 }).addTo(m);
     m.fitBounds(pl.getBounds(), { padding: [16, 16] });
   }, 60);
@@ -813,7 +810,8 @@ function collegaImpostazioni() {
     }
     apriPannello(`
       <h2>Dove sei</h2>
-      <p class="nota">Leggi questi numeri a chi ti risponde.</p>
+      <p class="nota">Questa schermata non chiama e non manda niente da sola.
+      Ti dà solo i numeri da leggere a voce a chi risponde al telefono.</p>
       <div class="riquadro sole" style="margin-top:12px">
         <div class="riga"><label>Gradi e minuti</label><b class="mono">${gm(lat, 'N', 'S')}<br>${gm(lon, 'E', 'O')}</b></div>
         <div class="riga"><label>Decimali</label><b class="mono">${lat.toFixed(5)}<br>${lon.toFixed(5)}</b></div>
@@ -842,7 +840,14 @@ function apriLivelli() {
     <h2>Sulla mappa</h2>
     <div class="riquadro">
       <div class="riga"><label>Approdi e punti di emergenza<span class="sotto">Dalle carte del Lario</span></label><div class="interr${S.set.showPOI ? ' on' : ''}" id="l-poi"><i></i></div></div>
-      <div class="riga"><label>Righe dei 300 m e del miglio</label><div class="interr${S.set.showContours ? ' on' : ''}" id="l-iso"><i></i></div></div>
+      <div class="riga"><label>Fasce di distanza dalla riva</label><div class="interr${S.set.showZones ? ' on' : ''}" id="l-iso"><i></i></div></div>
+    </div>
+    <div class="riquadro crema" style="margin-top:12px">
+      <div class="legenda">
+        <div><i style="background:rgba(255,107,87,.55)"></i> Oltre un miglio dalla riva</div>
+        <div><i style="background:rgba(255,201,60,.35)"></i> Entro i 300 metri, occhio ai bagnanti</div>
+        <div><i style="background:var(--carta)"></i> In mezzo, la fascia in cui stai di solito</div>
+      </div>
     </div>
     <h2 style="margin-top:22px">All\u2019ancora</h2>
     <button class="bottone ${anc ? 'rosso' : 'chiaro'}" id="l-anc">${anc ? 'Spegni la guardia all\u2019ancora' : 'Accendi la guardia all\u2019ancora'}</button>
@@ -856,8 +861,8 @@ function apriLivelli() {
     await Store.saveSettings(S.set); disegnaApprodi();
   };
   $('#l-iso').onclick = async e => {
-    S.set.showContours = !S.set.showContours; e.currentTarget.classList.toggle('on', S.set.showContours);
-    await Store.saveSettings(S.set); disegnaIsolinee();
+    S.set.showZones = !S.set.showZones; e.currentTarget.classList.toggle('on', S.set.showZones);
+    await Store.saveSettings(S.set); disegnaZone();
   };
   $('#l-anc').onclick = () => { ancora(); chiudiPannello(); };
   $('#l-punto').onclick = () => { if (S.fix) { chiudiPannello(); salvaPunto(S.fix.lat, S.fix.lon); } };
@@ -887,6 +892,7 @@ function vai(v) {
 async function avvia() {
   S.set = await Store.settings();
   if (S.set.shallowAlert == null) S.set.shallowAlert = 3;
+  if (S.set.showZones == null) S.set.showZones = S.set.showContours !== false;
   if (S.set.limitAlert === 5556) S.set.limitAlert = 1852;
   applicaTema();
   setInterval(applicaTema, 300000);

@@ -54,7 +54,7 @@ export const Store = {
       shallowAlert: 3,         // avvisa sotto questi metri di fondale
       alertSound: true,
       keepAwake: true,
-      showContours: true,
+      showZones: true,
       showPOI: true,
       home: null,              // {lat,lon,name} punto di alaggio abituale
     }, v || {});
