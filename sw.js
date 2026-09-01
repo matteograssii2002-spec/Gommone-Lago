@@ -1,6 +1,6 @@
 /* Guscio dell'app in cache, tiles conservate man mano che le incontri:
    le zone già viste restano visibili anche senza campo. */
-const V = 'gommone-v3';
+const V = 'gommone-v4';
 const SHELL = [
   './', './index.html', './styles.css', './manifest.webmanifest',
   './js/app.js', './js/marine.js', './js/store.js', './js/como.js',

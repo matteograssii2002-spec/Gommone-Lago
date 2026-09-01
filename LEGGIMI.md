@@ -96,6 +96,26 @@ Nessuno dei due manda niente da solo.
 Sulla mappa il salvagente 🛟 è un'altra cosa: segna il punto in cui qualcuno è
 caduto in acqua e ti mostra rotta e distanza per tornarci.
 
+## Come è fatta la mappa
+
+L'app conosce solo il Lago di Como e non prova a essere un navigatore mondiale.
+Questo è ciò che la rende leggera.
+
+Al primo avvio con la rete scarica una volta sola la sponda del Lario da
+OpenStreetMap, la ricuce in un anello unico, la semplifica da circa sedicimila
+vertici a millecinquecento e la salva. Poi calcola una volta sola la carta
+delle distanze dalla riva su tutto il lago, a venticinque metri di risoluzione,
+e la salva come immagine.
+
+Da quel momento spostare o ingrandire la mappa non ricalcola più niente: c'è
+solo un'immagine già pronta da mostrare. Prima invece rifacevo il conto a ogni
+movimento del dito, ed è per quello che scattava.
+
+La mappa è vincolata al riquadro del Lario: non puoi allontanarti fino
+all'oceano, e la sagoma del lago viene disegnata piena sopra le mattonelle,
+con un velo sulla terraferma. Sparisce tutto il rumore di OpenStreetMap:
+rotte dei traghetti, curve di livello, strade, gallerie.
+
 ## Le fasce di distanza dalla riva
 
 Sulla mappa vedi due veli di colore:

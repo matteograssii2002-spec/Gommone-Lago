@@ -54,6 +54,8 @@ h1, h2, h3, p { margin: 0; }
 /* ---------- mappa ---------- */
 #map { position: absolute; inset: 0; background: var(--lago-chiaro); }
 .leaflet-tile-pane { filter: var(--tile); }
+.fasce { image-rendering: auto; }
+.leaflet-container .leaflet-overlay-pane svg path { stroke-linejoin: round; }
 .leaflet-container { background: var(--lago-chiaro); font: inherit; }
 .leaflet-control-attribution { background: rgba(255,252,245,.82); color: var(--inchiostro); font-size: 9.5px; padding: 1px 6px; }
 [data-theme="notte"] .leaflet-control-attribution { background: rgba(10,27,32,.82); }

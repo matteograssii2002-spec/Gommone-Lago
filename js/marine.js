@@ -39,6 +39,41 @@ function pointSegDist(px, py, ax, ay, bx, by) {
   return Math.hypot(px - cx, py - cy);
 }
 
+/** Douglas-Peucker con tolleranza in metri: la sponda di OSM arriva con
+    decine di migliaia di vertici, all'app ne bastano poche migliaia. */
+export function semplifica(p, tolM) {
+  if (p.length < 3) return p;
+  const mx = 111320 * Math.cos(p[0].lat * Math.PI / 180), my = 110540;
+  const X = p.map(q => q.lon * mx), Y = p.map(q => q.lat * my);
+  const tieni = new Uint8Array(p.length);
+  tieni[0] = tieni[p.length - 1] = 1;
+  // su un anello chiuso primo e ultimo punto coincidono e la retta di
+  // riferimento e' degenere: lo spezzo a meta' e semplifico i due archi
+  const chiuso = p[0].lat === p[p.length - 1].lat && p[0].lon === p[p.length - 1].lon;
+  const pila = [];
+  if (chiuso && p.length > 4) {
+    const mid = p.length >> 1;
+    tieni[mid] = 1;
+    pila.push([0, mid], [mid, p.length - 1]);
+  } else {
+    pila.push([0, p.length - 1]);
+  }
+  while (pila.length) {
+    const [a, b] = pila.pop();
+    if (b - a < 2) continue;
+    const dx = X[b] - X[a], dy = Y[b] - Y[a], l = Math.hypot(dx, dy) || 1e-9;
+    let peggio = 0, k = -1;
+    for (let i = a + 1; i < b; i++) {
+      const d = Math.abs((X[i] - X[a]) * dy - (Y[i] - Y[a]) * dx) / l;
+      if (d > peggio) { peggio = d; k = i; }
+    }
+    if (peggio > tolM && k > 0) { tieni[k] = 1; pila.push([a, k], [k, b]); }
+  }
+  const out = [];
+  for (let i = 0; i < p.length; i++) if (tieni[i]) out.push(p[i]);
+  return out;
+}
+
 /* ---------- linea di costa da OpenStreetMap ---------- */
 const OVERPASS = [
   'https://overpass-api.de/api/interpreter',
@@ -77,12 +112,21 @@ function dentroA(B, lat, lon) {
   return d;
 }
 
+function areaKm2(r) {
+  let a = 0;
+  const mx = 111.320 * Math.cos(r[0].lat * Math.PI / 180), my = 110.540;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    a += (r[j].lon * mx) * (r[i].lat * my) - (r[i].lon * mx) * (r[j].lat * my);
+  }
+  return Math.abs(a / 2);
+}
+
 export class Shore {
   constructor() {
     this.rings = [];      // specchi d'acqua, anelli chiusi
     this.holes = [];      // isole dentro gli specchi d'acqua
     this.lines = [];      // linee di costa aperte
-    this.cell = 0.01;     // ~1 km
+    this.cell = 0.004;    // ~440 m
     this.index = new Map();
     this.bbox = null;
     this.loading = false;
@@ -173,33 +217,39 @@ export class Shore {
     return lat > b.s + 0.01 && lat < b.n - 0.01 && lon > b.w + 0.015 && lon < b.e - 0.015;
   }
 
-  async load(lat, lon, radiusKm = 18) {
+  /** Carica una volta sola la sponda dentro un riquadro fisso, la semplifica
+      e mette in cache la geometria pronta all'uso, non la risposta grezza. */
+  async loadBox(box, chiave, tolM = 18) {
     if (this.loading) return;
-    this.holes = [];
     this.loading = true; this.error = null;
-    const dLat = radiusKm / 111, dLon = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
-    const b = { s: +(lat - dLat).toFixed(3), n: +(lat + dLat).toFixed(3), w: +(lon - dLon).toFixed(3), e: +(lon + dLon).toFixed(3) };
-    const ck = `shore:${b.s},${b.w},${b.n},${b.e}`;
     try {
-      let data = await Store.cacheGet(ck, 1000 * 60 * 60 * 24 * 60);
-      if (!data) {
-        const q = `[out:json][timeout:40];(
-way["natural"="water"](${b.s},${b.w},${b.n},${b.e});
-relation["natural"="water"](${b.s},${b.w},${b.n},${b.e});
-way["natural"="coastline"](${b.s},${b.w},${b.n},${b.e});
+      const pronta = await Store.cacheGet(chiave, 1000 * 60 * 60 * 24 * 365);
+      if (pronta) {
+        this.rings = pronta.rings; this.holes = pronta.holes; this.lines = pronta.lines;
+      } else {
+        const q = `[out:json][timeout:60];(
+way["natural"="water"](${box.s},${box.w},${box.n},${box.e});
+relation["natural"="water"](${box.s},${box.w},${box.n},${box.e});
 );out geom;`;
-        data = await this.fetchOverpass(q);
-        await Store.cacheSet(ck, data);
+        this.parse(await this.fetchOverpass(q));
+        const grosso = a => a.filter(r => r.length > 8);
+        this.rings = grosso(this.rings).map(r => semplifica(r, tolM));
+        this.holes = grosso(this.holes).map(r => semplifica(r, tolM));
+        this.lines = grosso(this.lines).map(r => semplifica(r, tolM));
+        // tengo solo gli specchi d'acqua grandi: le pozze non servono
+        this.rings = this.rings.filter(r => areaKm2(r) > 0.25);
+        await Store.cacheSet(chiave, { rings: this.rings, holes: this.holes, lines: this.lines });
       }
-      this.parse(data);
-      this.bbox = b;
+      this.bbox = box;
       this.build();
     } catch (e) {
-      this.error = e.message || 'costa non disponibile';
+      this.error = e.message || 'sponda non disponibile';
     } finally {
       this.loading = false;
     }
   }
+
+  get pronta() { return this.rings.length > 0; }
 
   async fetchOverpass(q) {
     let last;

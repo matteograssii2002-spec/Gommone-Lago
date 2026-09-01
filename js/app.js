@@ -4,7 +4,7 @@ import {
   loadWeather, WX, weatherWarnings, depthAt,
   litersPerHour, bestCruise, economyCruise, maxSpeed, planTrip,
 } from './marine.js';
-import { APPRODI, EMERGENZE, profonditaLario, riconosciVento } from './como.js';
+import { APPRODI, EMERGENZE, LARIO_BOX, profonditaLario, riconosciVento } from './como.js';
 
 const S = {
   set: null, fix: null, speed: 0,
@@ -70,6 +70,9 @@ function bip(n = 2) {
   if (navigator.vibrate) navigator.vibrate([170, 80, 170]);
 }
 
+let inCorso = null;
+function lavoro(msg) { inCorso = msg; disegnaQuadro(); }
+
 /* ---------- avvisi ---------- */
 function avvisa(id, grave, titolo, testo) {
   if (S.avvisi.has(id)) return;
@@ -98,7 +101,12 @@ let specchio, veloTerra, isolotti;
 let segui = true;
 
 function creaMappa() {
-  map = L.map('map', { zoomControl: false, tap: false });
+  const B = L.latLngBounds([LARIO_BOX.s, LARIO_BOX.w], [LARIO_BOX.n, LARIO_BOX.e]);
+  map = L.map('map', {
+    zoomControl: false, tap: false,
+    maxBounds: B.pad(0.08), maxBoundsViscosity: 0.9,
+    minZoom: 10, maxZoom: 16, zoomSnap: 0.5, preferCanvas: true,
+  });
   map.setView([45.9127, 9.3213], 13);   // Mandello
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, attribution: '© OpenStreetMap · carte del Consorzio dell\u2019Adda',
@@ -114,7 +122,7 @@ function creaMappa() {
   }).addTo(map);
 
   map.on('dragstart', () => { segui = false; $('#t-centro').classList.remove('acceso'); });
-  map.on('moveend', programmaZone);
+  map.on('zoomend', regolaEtichette);
   map.on('contextmenu', e => salvaPunto(e.latlng.lat, e.latlng.lng));
 
   disegnaApprodi();
@@ -136,7 +144,6 @@ function ricoloraMappa() {
   scia.setStyle({ color: C('corallo') });
   cerchio.setStyle({ color: C('lago') });
   if (cerchioAncora) cerchioAncora.setStyle({ color: C('sole') });
-  disegnaZone();
 }
 
 function aggiornaBarca() {
@@ -190,6 +197,25 @@ async function salvaPunto(lat, lon) {
   caricaPunti();
 }
 
+/** Scarica la sponda del Lario una volta sola, poi disegna sagoma e fasce.
+    Da lì in avanti spostare e ingrandire la mappa non costa più niente. */
+async function preparaLario() {
+  if (shore.pronta) return;
+  lavoro('Scarico la sponda del Lario…');
+  await shore.loadBox(LARIO_BOX, 'sponda-lario-v1', 18);
+  lavoro(null);
+  if (!shore.pronta) {
+    avvisa('sponda', false, 'Sponda non scaricata',
+      'Senza rete non posso disegnare il lago né le distanze. Riprova quando hai campo: poi resta salvata.');
+    return;
+  }
+  disegnaLago();
+  regolaEtichette();
+  await cartaFasce();
+  calcolaRiva();
+  disegnaQuadro();
+}
+
 /* ---------- il lago come forma piena ----------
    Le mattonelle OpenStreetMap sono piene di rotte dei traghetti, curve di
    livello e strade. Sopra ci stendo il lago come sagoma e un velo sulla
@@ -201,10 +227,12 @@ function disegnaLago() {
 
   const anelli = shore.rings.map(r => r.map(p => [p.lat, p.lon]));
   const isole = shore.holes.map(r => r.map(p => [p.lat, p.lon]));
-  const mondo = [[-85, -180], [-85, 180], [85, 180], [85, -180]];
+  const P = 0.12;
+  const cornice = [[LARIO_BOX.s - P, LARIO_BOX.w - P], [LARIO_BOX.s - P, LARIO_BOX.e + P],
+                   [LARIO_BOX.n + P, LARIO_BOX.e + P], [LARIO_BOX.n + P, LARIO_BOX.w - P]];
 
-  // velo sulla terraferma: il mondo intero con gli specchi d'acqua bucati
-  veloTerra = L.polygon([mondo, ...anelli], {
+  // velo sulla terraferma: solo la cornice del Lario, con il lago bucato
+  veloTerra = L.polygon([cornice, ...anelli], {
     stroke: false, fillColor: C('crema'), fillOpacity: .76, interactive: false,
   }).addTo(map);
 
@@ -219,51 +247,63 @@ function disegnaLago() {
   }
 }
 
-/* ---------- fasce di distanza dalla riva ----------
-   Disegnate come velo di colore invece che come righe: oltre il miglio
-   il rosso si vede da lontano, i 300 metri restano un accenno giallo. */
-let timerZone = null;
-const programmaZone = () => {
-  clearTimeout(timerZone);
-  timerZone = setTimeout(() => {
-    const c = map.getCenter();
-    if (!shore.covers(c.lat, c.lng) && !shore.loading) {
-      shore.load(c.lat, c.lng, 14).then(() => { disegnaLago(); disegnaZone(); calcolaRiva(); });
-    }
-    disegnaZone();
-  }, 380);
-};
+/* ---------- carta delle fasce ----------
+   La distanza dalla riva sul Lario non cambia mai: la calcolo una volta
+   sull’intero lago, la salvo come immagine e da lì in poi la mappa non
+   ricalcola più niente quando sposti o ingrandisci. */
+const CARTA_KEY = 'fasce-lario-v1';
+const CARTA_W = 1176, CARTA_H = 1724;      // circa 25 metri per lato
 
-function disegnaZone() {
-  if (!map) return;
+async function cartaFasce() {
   if (zone) { map.removeLayer(zone); zone = null; }
-  if (!S.set.showZones || !shore.index.size || map.getZoom() < 10) return;
+  if (!S.set.showZones || !shore.pronta) return;
+  const B = L.latLngBounds([LARIO_BOX.s, LARIO_BOX.w], [LARIO_BOX.n, LARIO_BOX.e]);
 
-  const b = map.getBounds();
-  const s = b.getSouth(), n = b.getNorth(), w = b.getWest(), e = b.getEast();
-  const N = 128;
+  let url = await Store.cacheGet(CARTA_KEY, 1000 * 60 * 60 * 24 * 365);
+  if (url && typeof url !== 'string') url = null;
+  if (!url) {
+    lavoro('Preparo le fasce di distanza…');
+    await new Promise(r => setTimeout(r, 30));      // lascio ridisegnare la pillola
+    url = costruisciCarta();
+    await Store.cacheSet(CARTA_KEY, url);
+    lavoro(null);
+  }
+  zone = L.imageOverlay(url, B, { interactive: false, opacity: 1, className: 'fasce' }).addTo(map);
+  zone.setZIndex(450);
+}
+
+function costruisciCarta() {
   const cv = document.createElement('canvas');
-  cv.width = N; cv.height = N;
+  cv.width = CARTA_W; cv.height = CARTA_H;
   const ctx = cv.getContext('2d');
-  const img = ctx.createImageData(N, N);
+  const img = ctx.createImageData(CARTA_W, CARTA_H);
   const px = img.data;
-  const noto = shore.rings.length > 0;
+  const dLat = (LARIO_BOX.n - LARIO_BOX.s) / CARTA_H;
+  const dLon = (LARIO_BOX.e - LARIO_BOX.w) / CARTA_W;
 
-  for (let i = 0; i < N; i++) {
-    const lat = n - (i + 0.5) * (n - s) / N;
-    for (let j = 0; j < N; j++) {
-      const lon = w + (j + 0.5) * (e - w) / N;
-      const k = (i * N + j) * 4;
-      if (noto && shore.inWater(lat, lon) === false) continue;   // a terra: niente
+  for (let y = 0; y < CARTA_H; y++) {
+    const lat = LARIO_BOX.n - (y + 0.5) * dLat;
+    for (let x = 0; x < CARTA_W; x++) {
+      const lon = LARIO_BOX.w + (x + 0.5) * dLon;
+      if (!shore.inWater(lat, lon)) continue;
       const d = shore.distance(lat, lon);
       if (d == null) continue;
-      if (d > NM) { px[k] = 240; px[k + 1] = 70; px[k + 2] = 50; px[k + 3] = 120; }
-      else if (d < 300) { px[k] = 255; px[k + 1] = 190; px[k + 2] = 20; px[k + 3] = 70; }
+      const k = (y * CARTA_W + x) * 4;
+      if (d > NM) { px[k] = 240; px[k + 1] = 66; px[k + 2] = 46; px[k + 3] = 130; }
+      else if (d < 300) { px[k] = 255; px[k + 1] = 186; px[k + 2] = 16; px[k + 3] = 76; }
     }
   }
   ctx.putImageData(img, 0, 0);
-  zone = L.imageOverlay(cv.toDataURL(), b, { interactive: false, opacity: 1 }).addTo(map);
-  zone.setZIndex(450);
+  return cv.toDataURL('image/png');
+}
+
+/** le etichette degli approdi spariscono quando sei molto largo */
+function regolaEtichette() {
+  const z = map.getZoom();
+  approdi.eachLayer(l => {
+    const e = l.getElement && l.getElement();
+    if (e) e.style.display = z < 12 ? 'none' : '';
+  });
 }
 
 /* ---------- GPS ---------- */
@@ -306,9 +346,6 @@ function nuovaPosizione(pos) {
 async function dopoLaPosizione() {
   const f = S.fix;
 
-  if (!shore.covers(f.lat, f.lon) && !shore.loading) {
-    shore.load(f.lat, f.lon, 14).then(() => { disegnaLago(); disegnaZone(); calcolaRiva(); });
-  }
   calcolaRiva();
   calcolaFondo();
 
@@ -507,6 +544,7 @@ function disegnaQuadro() {
 
   // pillole
   const p = [];
+  if (inCorso) p.push({ t: '⏳ ' + inCorso });
   if (!S.fix) p.push({ t: '🛰️ Cerco il GPS' });
   if (S.aTerra) p.push({ t: '🚗 Sei a terra' });
   if (S.mob && S.fix) {
@@ -898,11 +936,11 @@ function apriLivelli() {
 
   $('#l-poi').onclick = async e => {
     S.set.showPOI = !S.set.showPOI; e.currentTarget.classList.toggle('on', S.set.showPOI);
-    await Store.saveSettings(S.set); disegnaApprodi();
+    await Store.saveSettings(S.set); disegnaApprodi(); regolaEtichette();
   };
   $('#l-iso').onclick = async e => {
     S.set.showZones = !S.set.showZones; e.currentTarget.classList.toggle('on', S.set.showZones);
-    await Store.saveSettings(S.set); disegnaZone();
+    await Store.saveSettings(S.set); cartaFasce();
   };
   $('#l-pulita').onclick = async e => {
     S.set.mappaPulita = !S.set.mappaPulita; e.currentTarget.classList.toggle('on', S.set.mappaPulita);
@@ -955,6 +993,8 @@ async function avvia() {
     segnoCasa = etichetta(S.set.home.lat, S.set.home.lon, '🏠 Casa', 'casa').addTo(map);
     map.setView([S.set.home.lat, S.set.home.lon], 14);
   }
+
+  preparaLario();
 
   $$('nav button').forEach(b => b.onclick = () => vai(b.dataset.v));
   $('#t-centro').onclick = () => {
